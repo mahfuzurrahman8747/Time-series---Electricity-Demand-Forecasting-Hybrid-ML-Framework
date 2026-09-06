@@ -17,12 +17,12 @@ from datetime import datetime
 @st.cache_resource
 def load_gb_model():
     """Load Gradient Boosting model, scaler, and features"""
-    models_dir = Path('./models')
+    models_dir = Path('./saved_models')
     
-    with open(models_dir / 'gradient_boosting_model.pkl', 'rb') as f:
+    with open(models_dir / 'M_GBoosting.pkl', 'rb') as f:
         model = pickle.load(f)
     
-    with open(models_dir / 'standard_scaler.pkl', 'rb') as f:
+    with open(models_dir / 'M_X_scaler.pkl', 'rb') as f:
         scaler = pickle.load(f)
     
     with open(models_dir / 'feature_names.json', 'r') as f:
@@ -33,7 +33,7 @@ def load_gb_model():
 @st.cache_resource
 def load_hourly_mean_demand():
     """Load 24-hour mean demand from last year"""
-    models_dir = Path('./models')
+    models_dir = Path('./saved_models')
     hourly_means_path = models_dir / 'hourly_mean_demand.json'
     
     if hourly_means_path.exists():

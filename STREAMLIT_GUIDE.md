@@ -1,359 +1,153 @@
-# 🌐 Streamlit Demo App — User Guide
+# 🌐 Streamlit Demo – Interactive Electricity Demand Forecast
 
-Complete instructions for running the interactive electricity demand forecasting demo.
+This guide walks you through launching the **Streamlit** dashboard that showcases the hybrid time‑series engine from this repository.  The app lets you:
+- Pick any of the 7 pre‑trained models
+- Adjust weather and temporal inputs
+- See real‑time demand predictions (MW) and the corresponding demand class (Low/Medium/High)
+- Visualise model performance and feature importance on the fly
 
 ---
 
-## 🚀 Quick Start (3 Steps)
+## 📦 Prerequisites
+| Item | Why? |
+|------|------|
+| Python 3.8+ | Required by the notebook and Streamlit runtime |
+| `requirements.txt` | Pinpointed library versions for reproducibility |
+| Trained model artefacts (`saved_models/`) | The app loads these at start‑up |
 
-### Step 1: Install Dependencies
+If you haven't installed the dependencies yet, run:
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 2: Ensure Models are Saved
-Models should already be in `./models/` directory:
+## 📂 Directory Layout (relevant parts)
 ```
-models/
-├── gradient_boosting_model.pkl
-├── xgboost_model.pkl
-├── transformer_model.pkl
-├── tcn_model.pkl
-├── conformal_prediction_model.pkl
-├── arima_model.pkl
-├── sarima_model.pkl
-├── standard_scaler.pkl
-├── feature_names.json
-└── model_metadata.json
+electricity-demand-forecasting/
+├─ streamlit_app.py            # Main Streamlit entry point
+├─ saved_models/               # Serialized models & scalers
+│   ├─ M_ANN.pth
+│   ├─ M_XGBoost.pkl
+│   └─ ...
+├─ paper_figures/              # High‑resolution plots used in docs
+└─ ...
 ```
 
-If not present, run the `final_model.ipynb` notebook to generate them.
-
-### Step 3: Run Streamlit App
+## 🚀 Launch the Dashboard
 ```bash
 streamlit run streamlit_app.py
 ```
-
-The app will open in your browser at `http://localhost:8501`
-
----
-
-## 📊 App Features
-
-### 🎯 **Sidebar Controls**
-
-#### Model Selection
-- Choose from 7 pre-trained models
-- Switch between them to compare predictions
-
-#### Input Features
-Configure real-time parameters:
-- **Hour** (0-23) — Hour of the day
-- **Day of Week** (0-6) — Monday to Sunday
-- **Month** (1-12) — Month number
-- **Temperature** (°C) — Current temperature
-- **Load Shedding** (0/1) — Yes/No toggle
-- **Wind Speed** (m/s) — Wind speed
-- **Historical Lags** — Previous demand values
-
-#### Advanced Settings
-- **Lag Features**: Previous hour, day, and week demand
-- **Rolling Statistics**: 24-hour mean and std dev
-- **Day of Year**: Auto-calculated from month/day
-
----
-
-## 🎮 How to Use
-
-### Making a Prediction
-
-1. **Adjust Sidebar Parameters**
-   - Set time, weather, and historical values
-   - Or use default values for a quick test
-
-2. **Click "Generate Prediction" Button**
-   - Model processes inputs
-   - Returns predicted demand in MW
-
-3. **View Results**
-   - Prediction value displayed in green
-   - Demand class (Low/Medium/High) shown
-   - Model accuracy and MAE metrics displayed
-
-### Comparing Models
-
-1. **Change Model Selection**
-   - Dropdown in sidebar
-   - Automatically reloads selected model
-
-2. **Generate New Prediction**
-   - Same inputs with different model
-   - Compare predictions
-
-3. **View Model Performance**
-   - Accuracy metric updates
-   - MAE changes based on model
-   - Performance comparison charts update
-
----
-
-## 📈 Dashboard Sections
-
-### 1. **Model Performance Metrics**
-Top 4 cards showing:
-- 📊 Current model accuracy
-- 📌 MAE (Mean Absolute Error)
-- 📐 R² Score
-- 🎯 Model type (ML/Statistical/Deep Learning)
-
-### 2. **Real-Time Prediction**
-- Input summary display
-- Prediction result (MW)
-- Demand classification
-- Model information
-
-### 3. **Model Comparison**
-Two side-by-side charts:
-- Accuracy ranking across all models
-- MAE comparison (lower is better)
-
-### 4. **Feature Importance**
-Bar chart showing which features impact predictions most
-
-### 5. **24-Hour Forecast**
-Line chart with confidence interval band (if available)
-
-### 6. **Model Rankings Table**
-Sortable table with:
-- Model name
-- Accuracy
-- MAE
-- R² score
-
----
-
-## ⚙️ Configuration
-
-### Modify Input Ranges
-Edit sidebar number inputs in `streamlit_app.py`:
-
-```python
-hour = st.number_input("Hour (0-23)", min_value=0, max_value=23, value=12)
-# Change value=12 to set different default
+The app will open at **http://localhost:8501** (or another free port if 8501 is taken).  If you need a specific port:
+```bash
+streamlit run streamlit_app.py --server.port 8502
 ```
 
-### Add Custom Models
-1. Save new trained model to `./models/`
-2. Update `load_all_models()` function
-3. Add to sidebar model selection
+---
 
-### Change UI Theme
-Modify CSS in app:
+## 🖥️ UI Overview
+### 1️⃣ Sidebar Controls
+- **Model selection** – Dropdown lists the 7 models (ARIMA … Conformal Prediction).
+- **Temporal inputs** – Hour, day‑of‑week, month.
+- **Weather inputs** – Temperature (°C) and wind speed (m/s).
+- **Load‑shedding toggle** – Binary flag for grid interruptions.
+- **Lag features** – Auto‑filled from the most recent demand values (or you can edit them).
+
+### 2️⃣ Main Panel
+- **Prediction card** – Shows the forecasted demand (MW) and its class with a colour‑coded badge.
+- **Model performance card** – Pulls the latest accuracy/MAE from `paper_figures/Fig7C_R2_comparison.png` and `Fig7A_MAE_comparison.png` – see the images below.
+- **Feature importance bar chart** – Dynamically generated from the selected model’s permutation importance.
+- **24‑hour forecast line chart** – Historical demand (gray) vs. predicted (blue) with a confidence interval (if the model provides it).
+
+#### 📈 Sample Screenshots (paper figures)
+![Model Accuracy Overview](paper_figures/Fig7C_R2_comparison.png)
+*R² scores across all models.*
+
+![MAE Comparison](paper_figures/Fig7A_MAE_comparison.png)
+*Mean Absolute Error per model.*
+
+---
+
+## ⚙️ Customising the App
+### Adding a New Model
+1. Serialize the trained model to `saved_models/` (pickle, torch, etc.).
+2. Append a loading entry in `load_all_models()` of `streamlit_app.py`.
+3. The new model will automatically appear in the sidebar dropdown.
+
+### Tweaking the UI Theme
+The dark theme is hard‑coded for presentation quality.  To switch to a light theme, edit the CSS block near the top of `streamlit_app.py`:
 ```python
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #0F1923;  # Change background
-    }
+    .stApp { background-color: #FFFFFF; }
 </style>
 """, unsafe_allow_html=True)
+```
+
+### Changing Input Ranges
+Modify the `st.number_input` calls in `streamlit_app.py` – e.g., to widen the temperature range:
+```python
+temp = st.number_input("Temperature (°C)", min_value=-30, max_value=50, value=25)
 ```
 
 ---
 
 ## 🐛 Troubleshooting
-
-### **Error: ModuleNotFoundError: No module named 'streamlit'**
-```bash
-pip install streamlit
-```
-
-### **Error: Failed to load models**
-- Ensure `./models/` directory exists
-- Check model files are present
-- Run notebook to regenerate models:
-```bash
-jupyter notebook final_model.ipynb
-# Run all cells
-```
-
-### **Error: No file found: 'gradient_boosting_model.pkl'**
-Run this in terminal (from Research directory):
-```bash
-python -c "from pathlib import Path; Path('./models').mkdir(exist_ok=True)"
-jupyter notebook final_model.ipynb
-# Execute model saving cells
-```
-
-### **Port Already in Use (Address already in use)**
-```bash
-streamlit run streamlit_app.py --server.port 8502
-```
-
-### **App Loads Slowly**
-- Models are large (~50-100 MB)
-- First load caches models in memory
-- Subsequent runs are faster
-- Close other applications to free RAM
-
-### **Prediction Returns NaN or Error**
-- Check input ranges are valid
-- Ensure scaler is compatible
-- Try with default values first
+| Symptom | Fix |
+|---------|-----|
+| `ModuleNotFoundError: streamlit` | `pip install streamlit` |
+| Model files missing | Ensure `saved_models/` contains the .pkl/.pth files; re‑run `final_model.ipynb` to generate them. |
+| Port already in use | Start with a different port: `streamlit run streamlit_app.py --server.port 8502` |
+| Predictions return `NaN` | Check that all inputs are within the training range (see the *Input Ranges* section above). |
 
 ---
 
-## 📱 UI Tips & Tricks
+## 📦 Deployment Options
+### Streamlit Cloud (quick, free)
+1. Push the repository to GitHub.
+2. Sign‑in at https://share.streamlit.io and select the repo.
+3. Set the entry‑point to `streamlit_app.py`.
+4. Deploy – a public URL will be generated.
 
-### Keyboard Shortcuts
-- **R** — Rerun script
-- **C** — Clear cache (forces model reload)
-- **K** — Toggle fullscreen
-- **D** — Open/close documentation
-
-### Dark Theme Benefits
-- Easier on eyes during long sessions
-- Better readability for presentations
-- Professional appearance
-
-### Interactive Charts
-- **Hover** over bars to see values
-- **Click legend** to toggle series
-- **Drag** to zoom into charts
-- **Double-click** to reset zoom
-
----
-
-## 🔄 Update Models
-
-To use newly trained models:
-
-1. **Train new models** in `final_model.ipynb`
-2. **Re-run model saving cells** (cells 2-3)
-3. **Models auto-reload** in Streamlit (next run)
-
-Or manually force reload:
-```bash
-# In terminal
-streamlit run streamlit_app.py --logger.level=debug
-# Press C to clear cache
-```
-
----
-
-## 📊 Expected Output Example
-
-```
-⚡ Electricity Demand Forecasting Dashboard
-
-📈 Model Performance Summary
-📊 Accuracy: 99.69%
-📌 MAE (MW): 18.1
-📐 R² Score: 0.9983
-🎯 Model Type: ML Ensemble
-
-🔮 Demand Prediction — Gradient Boosting
-✅ Predicted Demand: 9,547.2 MW
-Demand Class: 🟡 MEDIUM
-
-Input Parameters:
-• Time: 12:00 (Wednesday)
-• Month: 5 | Temperature: 25.0°C
-• Load Shedding: No ✅
-• Wind Speed: 5.0 m/s
-
-Model Used: gradient_boosting
-Accuracy: 99.69%
-```
-
----
-
-## 🎨 Customization Ideas
-
-### Add More Input Features
-- Holidays flag
-- Special events indicator
-- Renewable energy generation
-
-### Extend Forecasting
-- 24-hour ahead forecast
-- Weekly forecast
-- Seasonal trends
-
-### Add Analytics
-- Feature sensitivity analysis
-- Prediction confidence scores
-- Demand pattern insights
-
-### Improve UI
-- Custom color scheme
-- Map visualization
-- Real-time data connections
-
----
-
-## 📞 Support & Issues
-
-**If you encounter problems:**
-
-1. Check logs:
-```bash
-streamlit run streamlit_app.py --logger.level=debug
-```
-
-2. Verify setup:
-```bash
-python -c "import streamlit, pandas, sklearn; print('✅ Setup OK')"
-```
-
-3. Recreate models:
-```bash
-jupyter nbconvert --to notebook --execute final_model.ipynb
-```
-
----
-
-## 🚀 Deployment
-
-To deploy the app online:
-
-### **Using Streamlit Cloud** (Free)
-1. Push code to GitHub
-2. Go to https://share.streamlit.io
-3. Deploy from your repo
-4. Share public link
-
-### **Using Docker** (Advanced)
+### Docker (self‑hosted)
 ```dockerfile
-FROM python:3.9
+FROM python:3.9-slim
 WORKDIR /app
 COPY . .
-RUN pip install -r requirements.txt
-CMD ["streamlit", "run", "streamlit_app.py"]
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 8501
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "8501"]
+```
+Build & run:
+```bash
+docker build -t demand‑forecast .
+docker run -p 8501:8501 demand‑forecast
 ```
 
-### **Using Heroku** (Deprecated)
-Alternative cloud platforms recommended.
+### Heroku (deprecated) – see Streamlit Cloud instead.
 
 ---
 
-## 💡 Best Practices
-
-✅ **Do:**
-- Use realistic input values (9000-12000 MW for demand)
-- Check model accuracy before relying on predictions
-- Compare multiple models for critical decisions
-- Update models regularly with new data
-
-❌ **Don't:**
-- Use extreme input values outside training range
-- Rely on single model for critical decisions
-- Share raw model files without authentication
-- Deploy without testing
+## 📚 Further Reading & References
+- **Conformal Prediction** – https://arxiv.org/abs/1904.06857
+- **Time‑Series Forecasting** – Hyndman & Athanasopoulos, *Forecasting: Principles and Practice*
+- **XGBoost Documentation** – https://xgboost.readthedocs.io/
 
 ---
 
-**Happy Forecasting!** ⚡📊
+## 🤝 Contributing
+Feel free to open issues or pull requests.  Typical contributions include:
+- Adding new weather or calendar features
+- Implementing a true deep‑learning model (LSTM, Prophet, etc.)
+- Improving visualisations (interactive Plotly charts, map overlays)
 
-Last Updated: May 2026
+---
 
+## 📧 Support
+If you run into problems, try the troubleshooting table above.  For anything else, reach out via:
+- Email: mahfuzurrahman8747@gmail.com
+- GitHub Issues: https://github.com/yourusername/electricity-demand-forecasting/issues
+
+---
+
+**Happy forecasting!** ⚡📊
+
+*Last updated: September 2026*

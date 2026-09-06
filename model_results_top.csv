@@ -1,0 +1,5 @@
+Rank,Model,Accuracy,MAE,RMSE,MAPE,R2,CI_Coverage_90pct
+1,Gradient Boosting,98.255,203.3,271.9,1.745,0.985,
+2,XGBoost,98.134,219.7,287.5,1.866,0.9832,
+3,ANN,98.12,224.8,309.9,1.88,0.9805,
+4,Sarima,96.191,325.9,393.8,3.809,0.8293,
