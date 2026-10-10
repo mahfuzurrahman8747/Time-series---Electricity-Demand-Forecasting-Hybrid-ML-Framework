@@ -1,10 +1,8 @@
 # 🌐 Streamlit Demo – Interactive Electricity Demand Forecast
 
-This guide walks you through launching the **Streamlit** dashboard that showcases the hybrid time‑series engine from this repository.  The app lets you:
-- Pick any of the 7 pre‑trained models
-- Adjust weather and temporal inputs
-- See real‑time demand predictions (MW) and the corresponding demand class (Low/Medium/High)
-- Visualise model performance and feature importance on the fly
+This guide covers the **Streamlit** app currently implemented in `streamlit_app.py`.
+It loads the saved Gradient Boosting model and lets you enter temporal, weather,
+and demand inputs to generate a single electricity-demand prediction in MW.
 
 ---
 
@@ -44,48 +42,51 @@ streamlit run streamlit_app.py --server.port 8502
 ---
 
 ## 🖥️ UI Overview
-### 1️⃣ Sidebar Controls
-- **Model selection** – Dropdown lists the 7 models (ARIMA … Conformal Prediction).
-- **Temporal inputs** – Hour, day‑of‑week, month.
-- **Weather inputs** – Temperature (°C) and wind speed (m/s).
-- **Load‑shedding toggle** – Binary flag for grid interruptions.
-- **Lag features** – Auto‑filled from the most recent demand values (or you can edit them).
+### Sidebar Controls
+- **Temporal input** – Select a date and hour.
+- **Weather inputs** – Enter temperature (°C) and wind speed (m/s).
+- **Demand input** – Enter last-hour demand (MW), or check the box to use the
+  historical-average fallback. If `saved_models/hourly_mean_demand.json` is
+  absent, the app uses 9,500 MW for every hour.
 
-### 2️⃣ Main Panel
-- **Prediction card** – Shows the forecasted demand (MW) and its class with a colour‑coded badge.
-- **Model performance card** – Pulls the latest accuracy/MAE from `paper_figures/Fig7C_R2_comparison.png` and `Fig7A_MAE_comparison.png` – see the images below.
-- **Feature importance bar chart** – Dynamically generated from the selected model’s permutation importance.
-- **24‑hour forecast line chart** – Historical demand (gray) vs. predicted (blue) with a confidence interval (if the model provides it).
+### Main Panel
+- The app displays a fixed model-accuracy label and, after prediction, the
+  predicted demand (MW) and a summary of the selected inputs.
+- The current app does not provide a model-selection dropdown, demand class,
+  feature-importance chart, or 24-hour forecast chart.
+- The inference feature row uses the supplied last-hour demand value for all
+  demand lags and rolling means, sets `load_shedding` to zero, and estimates
+  rolling standard deviations from that demand value. Use this as a demo
+  workflow, not as a substitute for supplying the trained model's complete,
+  correctly aligned historical feature window.
 
-#### 📈 Sample Screenshots (paper figures)
-![Model Accuracy Overview](paper_figures/Fig7C_R2_comparison.png)
-*R² scores across all models.*
-
-![MAE Comparison](paper_figures/Fig7A_MAE_comparison.png)
-*Mean Absolute Error per model.*
+The model-comparison images in `paper_figures/` are offline evaluation outputs,
+not panels rendered by the current app.
 
 ---
 
 ## ⚙️ Customising the App
 ### Adding a New Model
-1. Serialize the trained model to `saved_models/` (pickle, torch, etc.).
-2. Append a loading entry in `load_all_models()` of `streamlit_app.py`.
-3. The new model will automatically appear in the sidebar dropdown.
+The app currently loads only `M_GBoosting.pkl` through `load_gb_model()`; there
+is no model-selection dropdown or `load_all_models()` function. Supporting a
+different model requires updating the loader, compatible scaler and ordered
+feature list, feature construction, and prediction UI together.
 
 ### Tweaking the UI Theme
-The dark theme is hard‑coded for presentation quality.  To switch to a light theme, edit the CSS block near the top of `streamlit_app.py`:
-```python
-st.markdown("""
-<style>
-    .stApp { background-color: #FFFFFF; }
-</style>
-""", unsafe_allow_html=True)
-```
+The current app does not define custom CSS. Configure the Streamlit theme in
+`.streamlit/config.toml` if a different appearance is needed.
 
 ### Changing Input Ranges
-Modify the `st.number_input` calls in `streamlit_app.py` – e.g., to widen the temperature range:
+Modify the corresponding `st.sidebar` input in `streamlit_app.py`. For example,
+to widen the temperature range:
 ```python
-temp = st.number_input("Temperature (°C)", min_value=-30, max_value=50, value=25)
+temperature = st.sidebar.number_input(
+    "🌡️ Temperature (°C)",
+    min_value=-30.0,
+    max_value=50.0,
+    value=25.0,
+    step=0.1,
+)
 ```
 
 ---

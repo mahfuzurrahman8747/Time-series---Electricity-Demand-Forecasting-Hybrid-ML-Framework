@@ -1,150 +1,150 @@
-# ⚡ Electricity Demand Forecasting – Hybrid Time‑Series Engine
+# Bangladesh Electricity Demand Forecasting
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)](https://www.python.org)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+A time-aware forecasting project that combines historical electricity demand, weather observations, temporal features, and classical/statistical and machine-learning models. The repository includes exploratory analysis, hyperparameter-tuning notebooks, saved model artifacts, evaluation figures, and a Streamlit prediction interface.
 
-## 📖 Overview
-This repository implements a **production‑ready electricity demand forecasting system** for hourly demand across Bangladesh. It uses a **hybrid stack of statistical, machine‑learning and deep‑learning models** to turn raw weather and demand data into accurate short‑ and long‑term forecasts.
+## Project at a glance
 
-- 12 engineered temporal and weather features (lags, rolling stats, hour‑of‑day, month, etc.)
-- 80 / 20 temporal train‑test split mimicking real‑world deployment
-- Evaluation on regression (MW) and 3‑class demand classification (Low/Medium/High)
-- Dark‑theme visualisations ready for reports and presentations
+- **Target:** `demand_mw` (electricity demand in MW)
+- **Model inputs:** numeric load-shedding values, mean temperature, mean wind speed, temporal encodings, demand lags, and rolling statistics
+- **Prepared dataset:** 42,611 observations from 2020-01-01 through 2025-12-31
+- **Validation:** chronological 80/20 train-test split with shuffling disabled
+- **Best saved regression model:** Gradient Boosting, MAE 203.3 MW, RMSE 271.9 MW, and R² 0.985
 
-## 🚀 Quick Start
+## End-to-end workflow
+
+**Figure 1.** High-level view of the data-to-forecast workflow. The PNG is rendered at 320 DPI; the SVG is the scalable vector version.
+
+![Figure 1. Electricity demand forecasting workflow](paper_figures/Fig1_workflow.png)
+
+[Open the vector SVG](paper_figures/Fig1_workflow.svg)
+
+[Open the complete workflow flowchart](WORKFLOW.md) for the notebook-level data preparation, feature engineering, model tuning and evaluation, generated artifacts, and the implemented Streamlit prediction path.
+
+## Data and feature engineering
+
+The modelling table is [`cleaned_combined_data.csv`](cleaned_combined_data.csv), with the timestamp, target, and observed exogenous variables:
+
+| Field | Role | Description |
+|---|---|---|
+| `datetime` | Index | Observation timestamp |
+| `demand_mw` | Target | Electricity demand in megawatts |
+| `load_shedding` | Exogenous | Numeric load-shedding observation; source units/semantics are not specified in the prepared CSV |
+| `temp_mean` | Exogenous | Mean temperature |
+| `wspd_mean` | Exogenous | Mean wind speed |
+
+The persisted Gradient Boosting model uses 31 predictors. Calendar features are represented cyclically so that adjacent periods (for example, hours 23 and 0) remain close in feature space.
+
+| Feature group | Model features |
+|---|---|
+| Cyclic calendar (8) | `hour_sin`, `hour_cos`, `dow_sin`, `dow_cos`, `month_sin`, `month_cos`, `doy_sin`, `doy_cos` |
+| Observed drivers (3) | `load_shedding`, `temp_mean`, `wspd_mean` |
+| Demand lags (10) | `lag1`, `lag2`, `lag3`, `lag6`, `lag12`, `lag24`, `lag48`, `lag72`, `lag168`, `lag336` |
+| Rolling statistics (10) | `roll6_mean`, `roll6_std`, `roll12_mean`, `roll12_std`, `roll24_mean`, `roll24_std`, `roll48_mean`, `roll48_std`, `roll168_mean`, `roll168_std` |
+
+Lag and rolling features use prior demand history. Rows without the required history are excluded before model fitting. The model metadata records 33,820 training samples, a 0.2 test fraction, and `shuffle=false`.
+
+## Models and evaluation
+
+The training and tuning notebooks cover four forecasting approaches:
+
+| Model | Approach |
+|---|---|
+| Gradient Boosting | Tree-based regression; persisted model and feature metadata are included |
+| XGBoost | Gradient-boosted decision trees |
+| ANN | Artificial neural network |
+| AutoARIMA / SARIMA | Statistical time-series forecasting |
+
+The following scores are recorded in [`model_results_top.csv`](model_results_top.csv). Models are ordered by MAE (lower is better); R² is reported as a coefficient of determination, not classification accuracy.
+
+| Model | MAE (MW) ↓ | RMSE (MW) ↓ | MAPE (%) ↓ | R² ↑ |
+|---|---:|---:|---:|---:|
+| **Gradient Boosting** | **203.3** | **271.9** | **1.745** | **0.9850** |
+| XGBoost | 219.7 | 287.5 | 1.866 | 0.9832 |
+| ANN | 222.7 | 298.0 | 1.860 | 0.9820 |
+| SARIMA | 325.9 | 393.8 | 3.809 | 0.8293 |
+
+These are the saved evaluation results in the repository; retraining can produce different values depending on data and library versions. Hyperparameter search spaces and selected settings are documented in [`Hyperparameter_tuning_of_models.ipynb`](Hyperparameter_tuning_of_models.ipynb), and the saved Gradient Boosting configuration is in [`saved_models/model_metadata.json`](saved_models/model_metadata.json).
+
+## Diagnostic figures
+
+Figures 2–7 were generated from the cleaned dataset and saved as 320-DPI PNGs with companion SVGs. Continuous-variable diagnostics include histograms, density estimates, boxplots, Q–Q references, and descriptive statistics. The `load_shedding` column is numeric, not a binary flag: 13,834 of 42,611 rows have a positive value. Figure 5 therefore visualizes zero vs. positive values and the positive-value distribution; the original source does not define its units in the prepared CSV.
+
+| Figure | Diagnostic | Image |
+|---|---|---|
+| **Figure 2** | Demand distribution, spread, and normality reference | ![Demand distribution diagnostics](paper_figures/Fig2_demand_distribution.png)<br>[SVG](paper_figures/Fig2_demand_distribution.svg) |
+| **Figure 3** | Mean temperature distribution diagnostics | ![Temperature distribution diagnostics](paper_figures/Fig3_temperature_distribution.png)<br>[SVG](paper_figures/Fig3_temperature_distribution.svg) |
+| **Figure 4** | Mean wind-speed distribution diagnostics | ![Wind-speed distribution diagnostics](paper_figures/Fig4_wind_speed_distribution.png)<br>[SVG](paper_figures/Fig4_wind_speed_distribution.svg) |
+| **Figure 5** | Numeric load-shedding values: zero/positive counts, positive-value distribution, and relationship with demand | ![Load-shedding diagnostics](paper_figures/Fig5_load_shedding_diagnostics.png)<br>[SVG](paper_figures/Fig5_load_shedding_diagnostics.svg) |
+| **Figure 6** | Correlation between observed target and exogenous variables | ![Feature correlation diagnostics](paper_figures/Fig6_feature_correlation_diagnostics.png)<br>[SVG](paper_figures/Fig6_feature_correlation_diagnostics.svg) |
+| **Figure 7** | Demand trend and annual distribution stability | ![Temporal stability diagnostics](paper_figures/Fig7_temporal_stability_diagnostics.png)<br>[SVG](paper_figures/Fig7_temporal_stability_diagnostics.svg) |
+
+## Forecast and model-analysis figures
+
+The repository also contains these previously exported analysis assets. Their filenames retain their original notebook numbering, independent of README Figures 1–7 above.
+
+| Original asset label | Description | Asset |
+|---|---|---|
+| 1 | Long-term demand history | [PNG](paper_figures/Fig1_long_term_demand.png) |
+| 2 | Hourly demand profile | [PNG](paper_figures/Fig2_hourly_demand_profile.png) |
+| 3 | Hour-by-day demand heatmap | [PNG](paper_figures/Fig3_hour_day_heatmap.png) |
+| 4 | Monthly demand profile | [PNG](paper_figures/Fig4_monthly_demand.png) |
+| 5 | Temperature-demand relationship | [PNG](paper_figures/Fig5_temperature_demand.png) |
+| 6 | Correlation heatmap | [PNG](paper_figures/Fig6_correlation_heatmap.png) |
+| 7A–7C | MAE, RMSE, and R² model comparisons | [MAE](paper_figures/Fig7A_MAE_comparison.png) · [RMSE](paper_figures/Fig7B_RMSE_comparison.png) · [R²](paper_figures/Fig7C_R2_comparison.png) |
+| 8 | Actual vs. predicted demand over 24 hours | [PNG](paper_figures/Fig8_actual_vs_predicted_24h.png) |
+| 9 | SARIMA forecast with prediction interval | [PNG](paper_figures/Fig9_SARIMA_prediction_interval.png) |
+| 10 | Gradient Boosting residuals over time | [PNG](paper_figures/Fig10_residuals.png) |
+| 11 | Gradient Boosting residual distribution | [PNG](paper_figures/Fig11_residual_distribution.png) |
+| 12 | Global SHAP feature importance | [PNG](paper_figures/Fig12_SHAP_global.png) |
+| — | Annual average demand | [PNG](paper_figures/yearly_average_demand.png) |
+
+## Repository layout
+
+```text
+4_model/
+├── README.md
+├── EDA.ipynb
+├── Hyperparameter_tuning_of_models.ipynb
+├── final_model.ipynb
+├── cleaned_combined_data.csv
+├── merged_all_divisions_weather_data.csv
+├── model_results_top.csv
+├── model_accuracy_bar_plot.png
+├── paper_figures/               # EDA, workflow, forecast, and model figures
+├── saved_models/                # Model files, scaler, and feature metadata
+├── streamlit_app.py
+└── STREAMLIT_GUIDE.md
+```
+
+## Run the project
+
+Use Python with the packages imported by the notebooks and dashboard (`numpy`, `pandas`, `scikit-learn`, `xgboost`, `torch`, `statsforecast`, `matplotlib`, `seaborn`, `scipy`, `streamlit`, and Jupyter).
+
 ```bash
-# Clone & enter the repo
-git clone https://github.com/yourusername/electricity-demand-forecasting.git
-cd electricity-demand-forecasting
-
-# Optional virtual environment
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the notebook that trains all models
-jupyter notebook final_model.ipynb   # execute all cells
-```
-The notebook will:
-1. Load and clean the merged weather‑demand dataset.
-2. Engineer the 12 features listed below.
-3. Train **4 models** (Gradient Boosting, XGBoost, ANN, SARIMA).
-4. Export trained artefacts to `saved_models/`.
-5. Produce a suite of PNG visualisations under `paper_figures/` and `results/`.
-
-## 📊 Models & Performance
-### Feature Engineering (12 Features)
-| Feature | Description |
-|---------|-------------|
-| `hour` | Hour of day (0‑23) |
-| `dayofweek` | Day of week (0‑6) |
-| `month` | Month (1‑12) |
-| `dayofyear` | Day of year (1‑365) |
-| `load_shedding` | Load‑shedding flag |
-| `temp_mean` | Mean temperature (°C) |
-| `wspd_mean` | Mean wind speed (m/s) |
-| `lag1` | Previous hour demand |
-| `lag24` | Same hour previous day |
-| `lag168` | Same hour previous week |
-| `roll24_mean` | 24‑hour rolling mean |
-| `roll24_std` | 24‑hour rolling std |
-
-### Model Line‑up (4 Models)
-| Category | Model |
-|----------|-------|
-| **Statistical / Hybrid** | SARIMA |
-| **Machine‑Learning** | Gradient Boosting, XGBoost |
-| **Deep‑Learning** | ANN (PyTorch) |
-
-### Regression Performance (MW)
-| Rank | Model | Accuracy | MAE (MW) | RMSE (MW) | MAPE (%) | R² |
-|------|-------|----------|----------|-----------|----------|-----|
-| 🥇 | **Gradient Boosting** | 98.255 % | 203.3 | 271.9 | 1.745 | 0.9850 |
-| 🥈 | **XGBoost** | 98.134 % | 219.7 | 287.5 | 1.866 | 0.9832 |
-| 🥉 | **ANN** | 98.120 % | 224.8 | 309.9 | 1.880 | 0.9805 |
-| 4 | **SARIMA** | 96.191 % | 325.9 | 393.8 | 3.809 | 0.8293 |
-
-### Classification Performance (3‑class demand)
-| Rank | Model | Accuracy | Precision | Recall | F1‑Score |
-|------|-------|----------|-----------|--------|----------|
-| 1 | Gradient Boosting | 97.84 % | 97.62 % | 97.84 % | 97.73 % |
-| 2 | XGBoost | 97.38 % | 97.28 % | 97.38 % | 97.32 % |
-| 3 | ANN | 96.98 % | 96.98 % | 96.98 % | 96.98 % |
-
-## 🛠️ Libraries Used
-- `warnings`
-- `pandas`
-- `numpy`
-- `scikit‑learn` (`GradientBoostingRegressor`, `train_test_split`, `StandardScaler`, metrics)
-- `xgboost`
-- `torch` (`torch`, `torch.nn`, `torch.utils.data`, `torch.optim`)
-- `utilsforecast` (`AutoARIMA`, `StatsForecast`, plotting/evaluation utilities)
-- `matplotlib`
-- `seaborn`
-- `joblib`
-- `pickle`
-- `json`
-- `os`
-
-## 📈 Visual Summary (paper figures)
-### Main Results
-![R² Comparison Across Models](paper_figures/Fig7C_R2_comparison.png)
-*Figure 7C – R² score per model.*
-
-![MAE Comparison Across Models](paper_figures/Fig7A_MAE_comparison.png)
-*Figure 7A – MAE per model (lower is better).*
-
-![Actual vs. Predicted (24 h)](paper_figures/Fig8_actual_vs_predicted_24h.png)
-*Figure 8 – 24‑hour horizon forecast vs. ground truth.*
-
-### Additional Insight Figures
-![Long‑Term Demand Trend](paper_figures/Fig1_long_term_demand.png)
-![Hourly Demand Profile](paper_figures/Fig2_hourly_demand_profile.png)
-![Hour‑Day Heatmap](paper_figures/Fig3_hour_day_heatmap.png)
-![Monthly Demand](paper_figures/Fig4_monthly_demand.png)
-![Temperature‑Demand Relationship](paper_figures/Fig5_temperature_demand.png)
-![Feature Correlation Heatmap](paper_figures/Fig6_correlation_heatmap.png)
-![RMSE Comparison Across Models](paper_figures/Fig7B_RMSE_comparison.png)
-![SARIMA Forecast with 80% Prediction Interval](paper_figures/Fig9_SARIMA_prediction_interval.png)
-![Gradient Boosting Residuals](paper_figures/Fig10_residuals.png)
-![Residual Distribution](paper_figures/Fig11_residual_distribution.png)
-![Annual Average Demand](paper_figures/yearly_average_demand.png)
-
-## 📂 Project Structure
-```
-electricity-demand-forecasting/
-├─ README.md                     # (this file)
-├─ STREAMLIT_GUIDE.md            # Interactive demo guide
-├─ final_model.ipynb              # Notebook that trains & evaluates all models
-├─ data/                          # Raw weather & demand CSVs per division
-├─ cleaned_combined_data.csv      # Pre‑processed dataset used by the notebook
-├─ saved_models/                  # Serialized model artefacts
-├─ paper_figures/                 # Publication‑quality plots used in this README
-├─ results/                       # Additional result tables & charts
-├─ streamlit_app.py               # Streamlit demo (coming soon)
-└─ requirements.txt               # Python dependencies
+python -m pip install numpy pandas scikit-learn xgboost torch statsforecast matplotlib seaborn scipy streamlit jupyter
+jupyter lab
 ```
 
-## 🖥️ Streamlit Demo
-Run the interactive dashboard – see **[`STREAMLIT_GUIDE.md`](STREAMLIT_GUIDE.md)** for a step‑by‑step walkthrough.
+Open `EDA.ipynb` for data preparation and exploratory analysis, `Hyperparameter_tuning_of_models.ipynb` for search experiments, or `final_model.ipynb` for model fitting and evaluation. The notebooks currently contain machine-specific file paths in some cells; update those paths to the local project location before running them on another machine.
 
-## 🧩 Extending the Engine
-- Add new features by extending the `FEATURES` list in `final_model.ipynb`.
-- Replace or add models in `saved_models/` and update `load_all_models()` in `streamlit_app.py`.
-- Deploy via Streamlit Cloud, Docker, or other platforms (see `STREAMLIT_GUIDE.md`).
+To launch the Streamlit interface from this directory:
 
-## 🤝 Contributing
-Contributions are welcome! Fork, create a feature branch, implement, and open a PR.
+```bash
+streamlit run streamlit_app.py
+```
 
-## 📜 License
-MIT – see `LICENSE`.
+The current dashboard loads the saved Gradient Boosting model, scaler, and feature metadata from `saved_models/`. See [`STREAMLIT_GUIDE.md`](STREAMLIT_GUIDE.md) for interface details.
 
-## 📧 Contact
-- **Author**: Mahfuzur Rahman
-- **Email**: mahfuzurrahman8747@gmail.com
-- **GitHub**: [@yourusername](https://github.com/yourusername)
+## Limitations and reproducibility
 
-*Last updated: September 2026*
+- A chronological split better reflects forecasting than random shuffling, but it is a single holdout evaluation; rolling-origin backtesting is recommended before operational deployment.
+- The model depends on historical demand for its lag and rolling features. Forecast generation requires a correctly aligned recent demand history.
+- The prepared `load_shedding` values are numeric and frequently zero. Their units and operational definition should be verified against the source data before interpreting feature effects or using the feature in production.
+- The notebooks include local absolute paths, and the repository currently does not include a `requirements.txt`; package versions should be pinned when reproducing or deploying the pipeline.
+- Reported scores describe the saved experiment and should not be interpreted as a guarantee of future forecast performance.
+
+## Contact
+
+- **Author:** Mahfuzur Rahman
+- **Email:** mahfuzurrahman8747@gmail.com
+- **GitHub:** [@mahfuzurrahman8747](https://github.com/mahfuzurrahman8747)
