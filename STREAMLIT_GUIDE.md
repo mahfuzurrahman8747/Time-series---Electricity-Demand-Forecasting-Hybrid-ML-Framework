@@ -1,154 +1,142 @@
-# 🌐 Streamlit Demo – Interactive Electricity Demand Forecast
+# Streamlit forecasting guide
 
-This guide covers the **Streamlit** app currently implemented in `streamlit_app.py`.
-It loads the saved Gradient Boosting model and lets you enter temporal, weather,
-and demand inputs to generate a single electricity-demand prediction in MW.
+This guide describes the interactive demand-forecasting interface in
+[`streamlit_app.py`](streamlit_app.py). It is an inference application: it loads
+already fitted models and preprocessing artifacts from `saved_models/` and
+does not train or update models when a user requests a prediction.
 
----
+## Run the app
 
-## 📦 Prerequisites
-| Item | Why? |
-|------|------|
-| Python 3.8+ | Required by the notebook and Streamlit runtime |
-| `requirements.txt` | Pinpointed library versions for reproducibility |
-| Trained model artefacts (`saved_models/`) | The app loads these at start‑up |
+From the `6_model` directory, activate the Python environment containing the
+project dependencies, then run:
 
-If you haven't installed the dependencies yet, run:
 ```bash
-pip install -r requirements.txt
+python -m streamlit run streamlit_app.py
 ```
 
-## 📂 Directory Layout (relevant parts)
-```
-electricity-demand-forecasting/
-├─ streamlit_app.py            # Main Streamlit entry point
-├─ saved_models/               # Serialized models & scalers
-│   ├─ M_ANN.pth
-│   ├─ M_XGBoost.pkl
-│   └─ ...
-├─ paper_figures/              # High‑resolution plots used in docs
-└─ ...
+If the project's virtual environment is `Research/venv`, use this PowerShell
+command from `6_model`:
+
+```powershell
+..\venv\Scripts\python.exe -m streamlit run streamlit_app.py
 ```
 
-## 🚀 Launch the Dashboard
+The app is normally available at `http://localhost:8501`. To use another port:
+
 ```bash
-streamlit run streamlit_app.py
+python -m streamlit run streamlit_app.py --server.port 8502
 ```
-The app will open at **http://localhost:8501** (or another free port if 8501 is taken).  If you need a specific port:
+
+Install the dashboard dependencies if needed:
+
 ```bash
-streamlit run streamlit_app.py --server.port 8502
+python -m pip install numpy pandas scikit-learn joblib statsforecast xgboost torch streamlit
 ```
 
----
+## Choose a model and enter inputs
 
-## 🖥️ UI Overview
-### Sidebar Controls
-- **Temporal input** – Select a date and hour.
-- **Weather inputs** – Enter temperature (°C) and wind speed (m/s).
-- **Demand input** – Enter last-hour demand (MW), or check the box to use the
-  historical-average fallback. If `saved_models/hourly_mean_demand.json` is
-  absent, the app uses 9,500 MW for every hour.
+The sidebar offers four saved models:
 
-### Main Panel
-- The app displays a fixed model-accuracy label and, after prediction, the
-  predicted demand (MW) and a summary of the selected inputs.
-- The current app does not provide a model-selection dropdown, demand class,
-  feature-importance chart, or 24-hour forecast chart.
-- The inference feature row uses the supplied last-hour demand value for all
-  demand lags and rolling means, sets `load_shedding` to zero, and estimates
-  rolling standard deviations from that demand value. Use this as a demo
-  workflow, not as a substitute for supplying the trained model's complete,
-  correctly aligned historical feature window.
+| Dashboard option | Artifact | Inference behavior |
+|---|---|---|
+| AutoARIMA (StatsForecast) | `saved_models/M_SF.pkl` | Uses the saved StatsForecast model and native 80% and 90% intervals |
+| Gradient Boosting | `saved_models/M_GBoosting.pkl` | Loads a fitted estimator and applies the saved feature scaler |
+| XGBoost | `saved_models/M_XGBoost.pkl` | Loads a fitted estimator and applies the saved feature scaler |
+| Residual ANN | `saved_models/M_ANN.pth` | Reconstructs the matching network, loads its saved weights, and performs inference |
 
-The model-comparison images in `paper_figures/` are offline evaluation outputs,
-not panels rendered by the current app.
+The user selects a date and hour and enters temperature, wind speed, and the
+load-shedding feature. For previous-hour demand, the app can use the matching
+hour-of-day value from `saved_models/hourly_mean_demand.json`, or the user can
+enter a demand value in MW.
 
----
+For example, a forecast at 00:00 uses the JSON mean for hour 23 as the default
+previous-hour demand. This value is used as the final forecast hour's `lag1`;
+future intermediate lag values are generated recursively.
 
-## ⚙️ Customising the App
-### Adding a New Model
-The app currently loads only `M_GBoosting.pkl` through `load_gb_model()`; there
-is no model-selection dropdown or `load_all_models()` function. Supporting a
-different model requires updating the loader, compatible scaler and ordered
-feature list, feature construction, and prediction UI together.
+## How inference works
 
-### Tweaking the UI Theme
-The current app does not define custom CSS. Configure the Streamlit theme in
-`.streamlit/config.toml` if a different appearance is needed.
+The app loads the ordered seven-feature list from
+`saved_models/feature_name.json`:
 
-### Changing Input Ranges
-Modify the corresponding `st.sidebar` input in `streamlit_app.py`. For example,
-to widen the temperature range:
-```python
-temperature = st.sidebar.number_input(
-    "🌡️ Temperature (°C)",
-    min_value=-30.0,
-    max_value=50.0,
-    value=25.0,
-    step=0.1,
-)
+```text
+hour_sin, hour_cos, load_shedding, temp_mean, wspd_mean, lag1, lag23
 ```
 
----
+The same fitted scaler in `saved_models/M_X_scaler.pkl` is used for the
+machine-learning models. The scaler and feature order must match those used
+when the estimators and ANN weights were trained.
 
-## 🐛 Troubleshooting
-| Symptom | Fix |
-|---------|-----|
-| `ModuleNotFoundError: streamlit` | `pip install streamlit` |
-| Model files missing | Ensure `saved_models/` contains the .pkl/.pth files; re‑run `final_model.ipynb` to generate them. |
-| Port already in use | Start with a different port: `streamlit run streamlit_app.py --server.port 8502` |
-| Predictions return `NaN` | Check that all inputs are within the training range (see the *Input Ranges* section above). |
+The app forecasts hourly from the available model history to the selected
+timestamp. It builds calendar features for each hour and feeds forecast demand
+back into future `lag1` and `lag23` features. Temperature, wind speed, and
+load-shedding inputs are held constant across these intermediate hours.
 
----
+### ANN uses saved weights only
 
-## 📦 Deployment Options
-### Streamlit Cloud (quick, free)
-1. Push the repository to GitHub.
-2. Sign‑in at https://share.streamlit.io and select the repo.
-3. Set the entry‑point to `streamlit_app.py`.
-4. Deploy – a public URL will be generated.
+The Residual ANN option loads `saved_models/M_ANN.pth` as a weights-only
+state dictionary, maps it to CPU, restores it into the matching network
+architecture, and sets the model to evaluation mode. The forecast runs under
+PyTorch inference mode. No training, optimizer step, or weight update occurs
+in Streamlit. To create new ANN weights, run the training workflow in
+`final_model.ipynb` separately and save the resulting state dictionary.
 
-### Docker (self‑hosted)
-```dockerfile
-FROM python:3.9-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-EXPOSE 8501
-CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "8501"]
-```
-Build & run:
-```bash
-docker build -t demand‑forecast .
-docker run -p 8501:8501 demand‑forecast
-```
+## Prediction intervals and scores
 
-### Heroku (deprecated) – see Streamlit Cloud instead.
+- AutoARIMA displays model-based 80% and 90% prediction intervals for the
+  selected hour, conditional on the entered weather and recursive demand
+  inputs.
+- The Gradient Boosting, XGBoost, and ANN artifacts do not contain calibrated
+  prediction intervals. The app intentionally does not invent interval ranges
+  for those models.
+- The displayed validation R² is read from `model_results_top.csv`. It is a
+  saved evaluation statistic, not a score calculated from the user's live
+  forecast and not classification accuracy.
 
----
+## Required saved files
 
-## 📚 Further Reading & References
-- **Conformal Prediction** – https://arxiv.org/abs/1904.06857
-- **Time‑Series Forecasting** – Hyndman & Athanasopoulos, *Forecasting: Principles and Practice*
-- **XGBoost Documentation** – https://xgboost.readthedocs.io/
+The dashboard expects these files to exist:
 
----
+| File | Used for |
+|---|---|
+| `saved_models/M_SF.pkl` | AutoARIMA model and the common saved demand history |
+| `saved_models/M_GBoosting.pkl` | Gradient Boosting estimator |
+| `saved_models/M_XGBoost.pkl` | XGBoost estimator |
+| `saved_models/M_ANN.pth` | Residual ANN weights |
+| `saved_models/M_X_scaler.pkl` | Scaler for the machine-learning model inputs |
+| `saved_models/feature_name.json` | Model input feature names and order |
+| `saved_models/hourly_mean_demand.json` | Hourly fallback demand values |
+| `model_results_top.csv` | Validation R² values shown in the interface |
 
-## 🤝 Contributing
-Feel free to open issues or pull requests.  Typical contributions include:
-- Adding new weather or calendar features
-- Implementing a true deep‑learning model (LSTM, Prophet, etc.)
-- Improving visualisations (interactive Plotly charts, map overlays)
+If a required artifact is missing or cannot be loaded, the app reports the
+loading error instead of silently substituting another model.
 
----
+## Forecast horizon and performance
 
-## 📧 Support
-If you run into problems, try the troubleshooting table above.  For anything else, reach out via:
-- Email: mahfuzurrahman8747@gmail.com
-- GitHub Issues: https://github.com/yourusername/electricity-demand-forecasting/issues
+The horizon is the number of hourly steps between the saved model history and
+the selected timestamp, including every intermediate hour. It is not just the
+number of hours beyond the current time.
 
----
+All model options recursively forecast intermediate hours because demand lags
+are inputs. This means a date far beyond the saved training history requires
+many predictions. AutoARIMA also repeats the full-horizon forecast while
+updating lag estimates until they converge (up to the configured iteration
+limit). The progress indicator shows the work being performed. The app limits
+the forecast to one year beyond the saved history.
 
-**Happy forecasting!** ⚡📊
+## Known limitations
 
-*Last updated: September 2026*
+- The saved non-AutoARIMA model artifacts do not record their individual
+  training cutoff. Their recursive demand history is initialized from the
+  available saved AutoARIMA history, and the app displays this caveat.
+- Forecast weather and load-shedding values are assumed constant for all
+  intermediate hours.
+- Forecast demand lags after the saved history are predictions, not observed
+  demand. Long-range results therefore accumulate recursive uncertainty.
+- The supplied hourly mean is a fallback for the final forecast hour's
+  previous-hour demand; it is not a replacement for the complete historical
+  lag sequence.
+- The saved machine-learning models and scaler must be regenerated together if
+  the feature definitions or order change.
+
+For the overall project, evaluation table, notebook workflow, and figure
+gallery, see [`README.md`](README.md).

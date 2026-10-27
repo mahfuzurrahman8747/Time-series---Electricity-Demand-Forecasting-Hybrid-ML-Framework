@@ -1,245 +1,244 @@
-"""
-⚡ Electricity Demand Forecasting — Streamlit App
-Run with: streamlit run streamlit_app.py
-"""
+"""Streamlit interface for the electricity demand forecasting models."""
 
-import math
-import pickle
-import json
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, time
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-
-# ================================================================================
-# FUNCTIONS
-# ================================================================================
-
-@st.cache_resource
-def load_gb_model():
-    """Load the trained Gradient Boosting model, scaler, and feature list."""
-    models_dir = Path(__file__).resolve().parent / "saved_models"
-
-    model_path = models_dir / "M_GBoosting.pkl"
-    scaler_path = models_dir / "M_X_scaler.pkl"
-
-    feature_candidates = [
-        models_dir / "feature_name.json",
-        models_dir / "feature_names.json",
-        models_dir / "model_metadata.json",
-    ]
-
-    feature_names = None
-    for feature_file in feature_candidates:
-        if not feature_file.exists():
-            continue
-        with open(feature_file, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-
-        if isinstance(payload, dict):
-            if "features" in payload:
-                feature_names = payload["features"]
-            elif "feature_names" in payload:
-                feature_names = payload["feature_names"]
-            elif "model_name" in payload and "features" in payload:
-                feature_names = payload["features"]
-
-        if isinstance(payload, list):
-            feature_names = payload
-
-        if feature_names is not None:
-            break
-
-    if feature_names is None:
-        raise FileNotFoundError(
-            "Feature metadata was not found in saved_models. "
-            "Expected a feature_name.json or feature_names.json file."
-        )
-
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-
-    with open(scaler_path, "rb") as f:
-        scaler = pickle.load(f)
-
-    return model, scaler, feature_names
-
-
-@st.cache_resource
-def load_hourly_mean_demand():
-    """Load average hourly demand by hour of day."""
-    models_dir = Path(__file__).resolve().parent / "saved_models"
-    hourly_means_path = models_dir / "hourly_mean_demand.json"
-
-    if hourly_means_path.exists():
-        with open(hourly_means_path, "r", encoding="utf-8") as f:
-            hourly_means = json.load(f)
-        return {int(k): float(v) for k, v in hourly_means.items()}
-
-    # Fallback if the historical file is missing.
-    return {hour: 9500.0 for hour in range(24)}
-
-
-def compute_cyclic(value: float, period: float):
-    """Return sine/cosine encoding for a cyclic feature."""
-    return math.sin(2 * math.pi * value / period), math.cos(2 * math.pi * value / period)
-
-
-def build_feature_row(selected_date, hour, temperature, wind_speed, demand_lag1):
-    """Create a single-row feature dictionary matching the trained model schema."""
-    day_of_week = selected_date.weekday()
-    month = selected_date.month
-    day_of_year = selected_date.timetuple().tm_yday
-
-    hour_sin, hour_cos = compute_cyclic(hour, 24)
-    dow_sin, dow_cos = compute_cyclic(day_of_week, 7)
-    month_sin, month_cos = compute_cyclic(month, 12)
-    doy_sin, doy_cos = compute_cyclic(day_of_year, 365)
-
-    rolling_std = max(5.0, abs(float(demand_lag1)) * 0.05)
-    base_demand = float(demand_lag1)
-
-    feature_row = {
-        "hour_sin": hour_sin,
-        "hour_cos": hour_cos,
-        "dow_sin": dow_sin,
-        "dow_cos": dow_cos,
-        "month_sin": month_sin,
-        "month_cos": month_cos,
-        "doy_sin": doy_sin,
-        "doy_cos": doy_cos,
-        "load_shedding": 0.0,
-        "temp_mean": float(temperature),
-        "wspd_mean": float(wind_speed),
-        "lag1": base_demand,
-        "lag2": base_demand,
-        "lag3": base_demand,
-        "lag6": base_demand,
-        "lag12": base_demand,
-        "lag24": base_demand,
-        "lag48": base_demand,
-        "lag72": base_demand,
-        "lag168": base_demand,
-        "lag336": base_demand,
-        "roll6_mean": base_demand,
-        "roll6_std": rolling_std,
-        "roll12_mean": base_demand,
-        "roll12_std": rolling_std,
-        "roll24_mean": base_demand,
-        "roll24_std": rolling_std,
-        "roll48_mean": base_demand,
-        "roll48_std": rolling_std,
-        "roll168_mean": base_demand,
-        "roll168_std": rolling_std,
-    }
-    return feature_row
-
-
-def predict_demand(model, scaler, features, input_dict):
-    """Generate a model prediction from a feature dictionary."""
-    try:
-        input_df = pd.DataFrame([input_dict], columns=features)
-        input_df = input_df[features]
-        input_scaled = scaler.transform(input_df)
-        prediction = model.predict(input_scaled)[0]
-        return float(prediction)
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return None
-
-
-# ================================================================================
-# PAGE CONFIG
-# ================================================================================
-
-st.set_page_config(
-    page_title="⚡ Electricity Demand Forecasting",
-    page_icon="⚡",
-    layout="centered",
+from forecast_engine import (
+    MAX_FORECAST_HOURS,
+    MODEL_PATHS,
+    load_forecast_model,
+    load_hourly_mean_demand,
+    load_sarima_model,
+    load_validation_r2,
+    next_forecast_time,
+    predict_demand_at,
+    predict_ml_demand_at,
 )
 
-# ================================================================================
-# LOAD MODEL & HOURLY MEANS
-# ================================================================================
 
-try:
-    model, scaler, features = load_gb_model()
-    hourly_means = load_hourly_mean_demand()
-    st.sidebar.success("✅ Model & Hourly Means Loaded")
-except Exception as e:
-    st.sidebar.error(f"❌ Error loading model: {str(e)}")
-    st.stop()
-
-# ================================================================================
-# SIDEBAR - INPUTS
-# ================================================================================
-
-st.sidebar.title("⚙️ Input Parameters")
-
-selected_date = st.sidebar.date_input("📅 Select Date", value=datetime.now())
-hour = st.sidebar.slider("⏰ Hour (0-23)", min_value=0, max_value=23, value=12)
-temperature = st.sidebar.number_input("🌡️ Temperature (°C)", min_value=-10.0, max_value=50.0, value=25.0, step=0.1)
-wind_speed = st.sidebar.number_input("💨 Wind Speed (m/s)", min_value=0.0, max_value=30.0, value=5.0, step=0.1)
-
-st.sidebar.subheader("📊 Historical Demand (MW)")
-default_demand = float(hourly_means.get(hour, 9500.0))
-st.sidebar.info(f"📈 Hour {hour:02d}:00 — Last Year Average: **{default_demand:.1f} MW**")
-
-use_default = st.sidebar.checkbox("I don't have last hour demand — use historical average", value=False)
-
-if use_default:
-    demand_lag1 = default_demand
-    st.sidebar.success(f"✅ Using historical average: **{default_demand:.1f} MW**")
-else:
-    demand_lag1 = st.sidebar.number_input(
-        "Last Hour Demand (MW)",
-        min_value=0.0,
-        max_value=20000.0,
-        value=default_demand,
-        step=10.0,
-        help="Leave as default or enter actual demand value",
-    )
-
-# ================================================================================
-# MAIN DASHBOARD
-# ================================================================================
+st.set_page_config(
+    page_title="Electricity Demand Forecast",
+    page_icon="⚡",
+    layout="wide",
+)
 
 st.title("⚡ Electricity Demand Forecasting")
+st.caption("Enter the forecast time and recent conditions to estimate electricity demand.")
+
+st.sidebar.header("⚙️ Input parameters")
+selected_model_name = st.sidebar.selectbox(
+    "Choose model",
+    options=list(MODEL_PATHS),
+    index=0,
+)
+
+try:
+    history_model = load_sarima_model()
+    selected_model, feature_scaler, feature_names = load_forecast_model(
+        selected_model_name
+    )
+    hourly_means = load_hourly_mean_demand()
+    first_forecast_time = next_forecast_time(history_model)
+except Exception as error:
+    st.error(f"Could not load forecast inputs or the selected model: {error}")
+    st.stop()
+
+last_training_time = pd.Timestamp(history_model.last_dates[0])
+st.metric(
+    f"{selected_model_name} latest test R²",
+    f"{load_validation_r2(selected_model_name):.2%}",
+)
+st.caption(f"Forecast history through {last_training_time:%Y-%m-%d %H:%M}")
+st.caption(
+    "The saved non-AutoARIMA model artifacts do not record their own training "
+    "cutoff; their recursive demand lags are seeded from the shared saved history."
+)
+
+default_forecast_time = max(
+    pd.Timestamp.now().floor("h") + pd.Timedelta(hours=1),
+    first_forecast_time,
+)
+forecast_date = st.sidebar.date_input(
+    "Select date",
+    value=default_forecast_time.date(),
+    min_value=first_forecast_time.date(),
+    max_value=(last_training_time + pd.Timedelta(hours=MAX_FORECAST_HOURS)).date(),
+)
+forecast_hour = st.sidebar.select_slider(
+    "Hour (0-23)",
+    options=list(range(24)),
+    value=default_forecast_time.hour,
+    format_func=lambda hour: f"{hour:02d}:00",
+)
+
+temperature = st.sidebar.number_input(
+    "🌡️ Temperature (°C)", value=25.0, step=0.1
+)
+wind_speed = st.sidebar.number_input(
+    "💨 Wind speed (m/s)", min_value=0.0, value=5.0, step=0.1
+)
+previous_hour = (forecast_hour - 1) % 24
+historical_average = hourly_means[previous_hour]
+st.sidebar.subheader("📊 Historical demand (MW)")
+st.sidebar.info(
+    f"Hourly mean for {previous_hour:02d}:00: {historical_average:,.2f} MW"
+)
+use_historical_average = st.sidebar.checkbox(
+    "I don't have last hour demand — use historical average",
+    value=True,
+)
+if use_historical_average:
+    last_hour_demand = historical_average
+    st.sidebar.success(f"Using historical average: {last_hour_demand:,.1f} MW")
+else:
+    last_hour_demand = st.sidebar.number_input(
+        "Last hour demand (MW)",
+        min_value=0.0,
+        value=historical_average,
+        step=100.0,
+        format="%.1f",
+    )
+
 st.divider()
-st.metric("📊 Model Accuracy", "98.255%")
-st.divider()
+st.header("🔮 Make prediction")
+st.caption(
+    "The forecast horizon counts hourly steps from the available model history "
+    "through the selected time. Intermediate hours are forecast recursively "
+    "because demand-lag features use earlier actual or forecast demand."
+)
 
-st.subheader("🔮 Make Prediction")
-
-if st.button("🚀 Predict Demand", use_container_width=True):
-    input_data = build_feature_row(selected_date, hour, temperature, wind_speed, demand_lag1)
-    prediction = predict_demand(model, scaler, features, input_data)
-
-    if prediction is not None:
-        st.success(f"✅ **Predicted Demand: {prediction:,.1f} MW**")
-
-        day_name = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ][selected_date.weekday()]
-
-        st.info(
-            f"""
-            **Input Summary:**
-            - Date: {selected_date.strftime('%Y-%m-%d')} ({day_name})
-            - Hour: {hour:02d}:00
-            - Temperature: {temperature}°C
-            - Wind Speed: {wind_speed} m/s
-            - Last Hour Demand: {demand_lag1:,.1f} MW
-            """
+if st.button("🚀 Predict demand", type="primary", width="stretch"):
+    selected_forecast_time = datetime.combine(
+        forecast_date,
+        time(hour=forecast_hour),
+    )
+    progress = None
+    try:
+        progress = st.progress(
+            0,
+            text="Starting recursive forecast; longer horizons need more iterations.",
         )
+        with st.spinner("Calculating the forecast up to the selected hour..."):
+            if selected_model_name == "AutoARIMA (StatsForecast)":
+                target_forecast, horizon, target_inputs = predict_demand_at(
+                    selected_model,
+                    selected_forecast_time,
+                    temperature,
+                    wind_speed,
+                    last_hour_demand,
+                    progress,
+                )
+                forecast_name = selected_model.models[0].alias
+                prediction = float(target_forecast[forecast_name])
+                prediction_intervals = {
+                    level: (
+                        float(target_forecast[f"{forecast_name}-lo-{level}"]),
+                        float(target_forecast[f"{forecast_name}-hi-{level}"]),
+                    )
+                    for level in (80, 90)
+                }
+                target_lag1 = float(target_inputs["lag1"])
+            else:
+                if selected_forecast_time < first_forecast_time:
+                    raise ValueError(
+                        "Choose a forecast time after the available model history "
+                        f"({last_training_time:%Y-%m-%d %H:%M})."
+                    )
+                horizon = (
+                    int(
+                        (selected_forecast_time - first_forecast_time)
+                        / pd.Timedelta(hours=1)
+                    )
+                    + 1
+                )
+                if horizon > MAX_FORECAST_HOURS:
+                    raise ValueError(
+                        "The selected time is more than one year beyond the "
+                        "available model history. Choose a closer date."
+                    )
+                forecast_times = pd.date_range(
+                    first_forecast_time,
+                    periods=horizon,
+                    freq="h",
+                )
+                prediction, horizon = predict_ml_demand_at(
+                    selected_model_name,
+                    selected_model,
+                    feature_scaler,
+                    feature_names,
+                    history_model.ga.data,
+                    forecast_times,
+                    temperature,
+                    wind_speed,
+                    last_hour_demand,
+                    progress,
+                )
+                prediction_intervals = None
+                target_lag1 = float(last_hour_demand)
+    except Exception as error:
+        if progress is not None:
+            progress.empty()
+        st.error(f"{selected_model_name} prediction failed: {error}")
+    else:
+        progress.empty()
+        if prediction_intervals is not None and not np.isfinite(
+            [bound for interval in prediction_intervals.values() for bound in interval]
+        ).all():
+            st.error("The model returned a non-finite prediction interval.")
+            st.stop()
+
+        st.markdown(
+            """
+<style>
+.st-key-forecast-results [data-testid="stMetricValue"] {
+    font-size: clamp(2.4rem, 4vw, 3.6rem);
+    font-weight: 700;
+    line-height: 1.15;
+}
+</style>
+""",
+            unsafe_allow_html=True,
+        )
+        with st.container(key="forecast-results"):
+            st.metric(
+                f"{selected_model_name} predicted demand",
+                f"{prediction:,.1f} MW",
+                border=True,
+            )
+            if prediction_intervals is not None:
+                with st.container(horizontal=True):
+                    for level, (lower, upper) in prediction_intervals.items():
+                        st.metric(
+                            f"{level}% prediction interval",
+                            f"{lower:,.1f}–{upper:,.1f} MW",
+                            border=True,
+                        )
+                st.caption(
+                    "AutoARIMA model-based intervals at the selected hour. They "
+                    "are conditional on the entered weather and recursive demand "
+                    "inputs."
+                )
+            else:
+                st.info(
+                    "The selected model artifact does not provide calibrated "
+                    "prediction intervals. Choose AutoARIMA to see the 80% and "
+                    "90% intervals."
+                )
+        with st.container(border=True):
+            st.subheader("Input summary")
+            st.markdown(
+                f"""
+- **Date:** {selected_forecast_time:%Y-%m-%d (%A)}
+- **Hour:** {selected_forecast_time:%H:%M}
+- **Temperature:** {temperature:.1f} °C
+- **Wind speed:** {wind_speed:.1f} m/s
+- **Last hour demand:** {target_lag1:,.1f} MW
+- **Forecast horizon:** {horizon:,} hourly steps (~{horizon / 24:.1f} days) from the training cutoff
+"""
+            )
 
 st.divider()
-st.markdown("*Built with ⚡ Streamlit — Electricity Demand Forecasting System*")
+st.caption(f"Built with Streamlit · Selected model: {selected_model_name}")
